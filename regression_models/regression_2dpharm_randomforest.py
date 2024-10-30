@@ -1,3 +1,4 @@
+#%%
 
 from rdkit import Chem
 import rdkit.Chem.Descriptors as Descriptors, rdkit.Chem.rdMolDescriptors as rdMolDescriptors
@@ -16,7 +17,7 @@ PERFORM_GRID_SEARCH = True
 
 #%%
 
-dataset = pd.read_csv("seed_101885_affinity.csv")
+dataset = pd.read_csv("source_data/dataset_smiles.csv")
 
 # Treat all 'inf' values as missing values
 dataset = dataset.replace([np.inf, -np.inf], np.nan)
@@ -33,7 +34,7 @@ rdkit_mols = [Chem.MolFromSmiles(smi) for smi in smiles]
 
 # Get descriptors
 
-descriptors_all = pd.read_csv("dataset_morganfingerprints.csv", header=None)
+descriptors_all = pd.read_csv("source_data/dataset_2dpharm.csv", header=None)
 descriptors = descriptors_all.iloc[indices]
 
 descriptors_array = descriptors.drop(0, axis=1).values
@@ -43,7 +44,7 @@ descriptors_array = descriptors.drop(0, axis=1).values
 # %%
 
 
-def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=42, quantify_test_set_occupancies=False):
+def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=42):
 
     # Build model
     rf_reg = Regressor_RandomForest(logKi, 
@@ -78,18 +79,12 @@ def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_l
     predicted_data_means = [np.mean(x) for x in predicted_data]
     predicted_data_stds = [np.std(x) for x in predicted_data]
 
-    if quantify_test_set_occupancies:
-        test_set_occupancies = [len(x) for x in predicted_data]
-
     # get MSE and PCC from the computed means
 
     MSE = np.mean((np.array(predicted_data_means) - logKi +3)**2)
     PCC = np.corrcoef(predicted_data_means, logKi-3)[0,1]
 
-    if quantify_test_set_occupancies:
-        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies)
-    else:
-        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
+    return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
 
 def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile=None, show=True):
 
@@ -157,11 +152,11 @@ if PERFORM_GRID_SEARCH:
             PCC_grid[i,j] = np.mean(PCCs)
 
 
-    np.save("regression_morganfp_randomforest/PCC_grid_n_estimators_max_depth.npy", PCC_grid)
-    np.save("regression_morganfp_randomforest/MSE_grid_n_estimators_max_depth.npy", MSE_grid)
+    np.save("regression_outputs/regression_2dpharm_randomforest/PCC_grid_n_estimators_max_depth.npy", PCC_grid)
+    np.save("regression_outputs/regression_2dpharm_randomforest/MSE_grid_n_estimators_max_depth.npy", MSE_grid)
 
-PCC_grid_n_estimators_max_depth = np.load("regression_morganfp_randomforest/PCC_grid_n_estimators_max_depth.npy")
-MSE_grid_n_estimators_max_depth = np.load("regression_morganfp_randomforest/MSE_grid_n_estimators_max_depth.npy")
+PCC_grid_n_estimators_max_depth = np.load("regression_outputs/regression_2dpharm_randomforest/PCC_grid_n_estimators_max_depth.npy")
+MSE_grid_n_estimators_max_depth = np.load("regression_outputs/regression_2dpharm_randomforest/MSE_grid_n_estimators_max_depth.npy")
 
 
 #%%
@@ -187,11 +182,11 @@ if PERFORM_GRID_SEARCH:
             PCC_grid[i,j] = np.mean(PCCs)
 
 
-    np.save("regression_morganfp_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy", PCC_grid)
-    np.save("regression_morganfp_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy", MSE_grid)
+    np.save("regression_outputs/regression_2dpharm_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy", PCC_grid)
+    np.save("regression_2dpharm_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy", MSE_grid)
 
-PCC_grid_min_samples_split_min_samples_leaf = np.load("regression_morganfp_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy")
-MSE_grid_min_samples_split_min_samples_leaf = np.load("regression_morganfp_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy")
+PCC_grid_min_samples_split_min_samples_leaf = np.load("regression_outputs/regression_2dpharm_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy")
+MSE_grid_min_samples_split_min_samples_leaf = np.load("regression_outputs/regression_2dpharm_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy")
 
 
 #%%
@@ -220,24 +215,22 @@ plt.show()
 
 # using the best parameters, make some predictions with a random seed.
 
-predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies = perform_regression(100, 10, 2, 1, 'sqrt', True, seed=42, quantify_test_set_occupancies=True)
+predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC = perform_regression(100, 10, 2, 1, 'sqrt', True, seed=42)
 plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC)
 
 feature_importances = rf_reg.model.feature_importances_
 
-#%%
+np.save("regression_outputs/regression_2dpharm_randomforest/feature_importances.npy", feature_importances)
+np.save("regression_outputs/regression_2dpharm_randomforest/predicted_data_means.npy", predicted_data_means)
+np.save("regression_outputs/regression_2dpharm_randomforest/predicted_data_stds.npy", predicted_data_stds)
+np.save("regression_outputs/regression_2dpharm_randomforest/MSE.npy", MSE)
+np.save("regression_outputs/regression_2dpharm_randomforest/PCC.npy", PCC)
 
-np.save("tanimoto/hierarch_cluster/feature_importances.npy", feature_importances)
-np.save("tanimoto/hierarch_cluster/predicted_data_means.npy", predicted_data_means)
-np.save("tanimoto/hierarch_cluster/predicted_data_stds.npy", predicted_data_stds)
-np.save("tanimoto/hierarch_cluster/MSE.npy", MSE)
-np.save("tanimoto/hierarch_cluster/PCC.npy", PCC)
-
-feature_importances = np.load("tanimoto/hierarch_cluster/feature_importances.npy")
-predicted_data_means = np.load("tanimoto/hierarch_cluster/predicted_data_means.npy")
-predicted_data_stds = np.load("tanimoto/hierarch_cluster/predicted_data_stds.npy")
-MSE = np.load("tanimoto/hierarch_cluster/MSE.npy")
-PCC = np.load("tanimoto/hierarch_cluster/PCC.npy")
+feature_importances = np.load("regression_outputs/regression_2dpharm_randomforest/feature_importances.npy")
+predicted_data_means = np.load("regression_outputs/regression_2dpharm_randomforest/predicted_data_means.npy")
+predicted_data_stds = np.load("regression_outputs/regression_2dpharm_randomforest/predicted_data_stds.npy")
+MSE = np.load("regression_outputs/regression_2dpharm_randomforest/MSE.npy")
+PCC = np.load("regression_outputs/regression_2dpharm_randomforest/PCC.npy")
 
 
 #%%
@@ -246,45 +239,118 @@ PCC = np.load("tanimoto/hierarch_cluster/PCC.npy")
 plt.clf()
 
 plt.plot(np.arange(len(feature_importances)), feature_importances)
-plt.xlabel("Morgan FP bit index")
+plt.xlabel("2D-pharmacophore bit index")
 plt.ylabel("Feature importance")
 plt.show()
 # %%
 
-from copy import copy
-# take the top 10 features
+
+
+# take the top 25 features
 
 top_features = np.argsort(feature_importances)[::-1][:25]
 print(top_features)
 
-# draw the morgan bits of these top 10 features
+# Interpret the top 25 bits
 
-# loop through the molecules and get bit information until all top 10 features are present
+from rdkit.Chem.Pharm2D import Generate
+from rdkit.Chem import ChemicalFeatures
+from rdkit.Chem.Pharm2D.SigFactory import SigFactory, Utils
 
-bit_found_for_feature = {}
+fdefName = 'regression_outputs/regression_2dpharm_randomforest/features.fdef'
+featFactory = ChemicalFeatures.BuildFeatureFactory(fdefName)
+sigFactory = SigFactory(featFactory,minPointCount=2,maxPointCount=3,trianglePruneBins=False)
+sigFactory.skipFeats=['ZnBinder']
+sigFactory.SetBins([(0, 2), (2, 5),(5, 8)])
+sigFactory.Init()
+
 for i in top_features:
-    bit_found_for_feature[i] = False
-
-to_draw = [None for i in range(len(top_features))]
-
-for n,rd_mol in enumerate(rdkit_mols):
-    bi = {}
-    fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(rd_mol, 2, nBits=1024, bitInfo=bi)
-
-    for i in bi.keys():
-        if i in top_features:
-            if not bit_found_for_feature[i]:
-                bit_found_for_feature[i] = True
-                print(f"Found bit {i} in molecule {Chem.MolToSmiles(rd_mol)} of id {n}")
-                to_draw[list(top_features).index(i)] = (copy(rd_mol), i, bi)
+    print(sigFactory.GetBitDescription(i))
 
 
-Chem.Draw.DrawMorganBits(to_draw, molsPerRow=5, 
-                         legends=[
-                             f"Bit {to_draw[i][1]}, weight={round(feature_importances[top_features[i]],3)}" 
-                             for i in range(len(to_draw))
-                             ]
-                            )
+
+
+def visualise_pharmophore(mol, bits, feature_importances,sigFactory):
+    """ Draw the molecule with the pharmacophore bits in the list highlighted. """
+
+    fp = Generate.Gen2DFingerprint(mol,sigFactory)
+    featFams = sigFactory.GetFeatFamilies()
+    feats = sigFactory.GetMolFeats(mol)
+
+    on_bits_of_interest = []
+    for bit in bits:
+        # Test if the bit is on
+        if fp.GetBit(int(bit)):
+            on_bits_of_interest.append(bit)
+    
+    
+    # Now we follow the procedure rdkit takes for generating pharmacophore bits,
+    # then check whether the bit is of interest, followed by highlighting the atom ids.
+            
+    dMat = Chem.GetDistanceMatrix(mol, sigFactory.includeBondOrder)
+    
+    minCount = sigFactory.minPointCount
+    maxCount = sigFactory.maxPointCount
+    nFeats = len(featFams)
+
+    perms = []
+    for count in range(minCount, maxCount + 1):
+        perms.extend(Utils.GetIndexCombinations(nFeats, count))
+
+    sig = sigFactory.GetSignature()
+
+    atom_indices_to_highlight = dict()
+    for bit in on_bits_of_interest:
+        atom_indices_to_highlight[bit] = [[] for i in range(nFeats)]
+
+    for perm in perms:
+        featClasses = [0] * len(perm)
+        for i in range(1, len(perm)):
+            if perm[i] == perm[i - 1]:
+                featClasses[i] = featClasses[i - 1]
+            else:
+                featClasses[i] = featClasses[i - 1] + 1
+    
+        matchPerms = [feats[x] for x in perm]
+        matchesToMap = Utils.GetUniqueCombinations(matchPerms, featClasses)
+        for i, entry in enumerate(matchesToMap):
+            matchesToMap[i] = [x[1] for x in entry]
+        for match in matchesToMap:
+            if sigFactory.shortestPathsOnly:
+                idx = Generate._ShortestPathsMatch(match, perm, sig, dMat, sigFactory)
+                
+                if idx in on_bits_of_interest:
+                    for n, p in enumerate(perm):
+                        atom_indices_to_highlight[idx][p].extend(match[n])
+
+    # draw the molecule as many times as there are on bits of interest
+
+    rgba_color = (0.78, 0.71, 0.24, 1.0)
+
+
+    highlightAtomColor = [{x: rgba_color for x in range(len(mol.GetAtoms()))}]*len(on_bits_of_interest)
+    highlightBondColor = [{x: rgba_color for x in range(len(mol.GetAtoms()))}]*len(on_bits_of_interest)
+
+    mols_to_draw = []
+    highlight_lists = []
+    for i,b in enumerate(on_bits_of_interest):
+        mol_copy = Chem.Mol(mol)
+        to_highlight_list = []
+        for j in range(nFeats):
+            for atom in atom_indices_to_highlight[b][j]:
+                to_highlight_list.append(atom)
+        highlight_lists.append(to_highlight_list)
+        mols_to_draw.append(mol_copy)
+    print(highlight_lists)
+    return Draw.MolsToGridImage(mols_to_draw, legends=[f"bit {x}, weight {round(feature_importances[x],3)}" for x in on_bits_of_interest], highlightAtomLists = highlight_lists, highlightAtomColors=highlightAtomColor, highlightBondColors=highlightBondColor)
+
+#%%
+
+visualise_pharmophore(rdkit_mols[0], top_features,feature_importances,sigFactory)
+#visualise_pharmophore(rdkit_mols[147], top_features,feature_importances,sigFactory)
+
+
+
 
 #%%
 
@@ -339,4 +405,21 @@ plt.ylabel("Histogram density")
 plt.vlines(0, 0, 1.2, color='grey', linestyle='dotted')
 plt.show()
 
+# %%
+
+# predict the penG ligands
+
+descriptors_penG = pd.read_csv("penG_predictions/ligand_2dpharm.csv", header=None)
+
+descriptors_array_penG = descriptors_penG.drop(0, axis=1).values
+
+prediction = rf_reg.get_predictions(rf_reg.model,descriptors_array_penG) -3
+
+# convert to kcal/mol
+
+kT = 0.0019872043 * 298
+
+kcal_mol = kT * np.log(10)
+
+prediction_kcal = prediction * kcal_mol
 # %%

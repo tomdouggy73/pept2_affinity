@@ -1,3 +1,5 @@
+#%%
+
 from rdkit import Chem
 import rdkit.Chem.Descriptors as Descriptors, rdkit.Chem.rdMolDescriptors as rdMolDescriptors
 import numpy as np
@@ -9,89 +11,122 @@ import matplotlib.pyplot as plt
 
 from matt_code.ml_networks import *
 
+
 # script settings
 PERFORM_GRID_SEARCH = True
 
-dataset = pd.read_csv('merged_clusters_complete.csv')
+#%%
+
+dataset = pd.read_csv("source_data/dataset_smiles.csv")
+
+# Treat all 'inf' values as missing values
+dataset = dataset.replace([np.inf, -np.inf], np.nan)
+
+# find all indices for which data exists for Caco-2 (PEPT1)
 
 indices = dataset["SKPT (PEPT2)"].dropna().index
 smiles = dataset["SMILES"][indices].values
 Ki = dataset["SKPT (PEPT2)"].dropna().values
 compounds_names = dataset["Compound"][indices].values
 logKi = np.log10(Ki)
-clusters = dataset['Cluster'].values
+
+rdkit_mols = [Chem.MolFromSmiles(smi) for smi in smiles]
 
 # Get descriptors
 
-descriptors = dataset.iloc[indices]
-descriptors_array = descriptors.drop(descriptors.columns[0:4], axis=1).values
+descriptors_all = pd.read_csv("source_data/dataset_morganfingerprints.csv", header=None)
+descriptors = descriptors_all.iloc[indices]
+
+descriptors_array = descriptors.drop(0, axis=1).values
 
 
-def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=42, quantify_test_set_occupancies=False):
-    
+
+# %%
+
+
+def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=41, quantify_test_set_occupancies=False):
+
     # Build model
     rf_reg = Regressor_RandomForest(logKi, 
-                                     descriptors_array, 
-                                     n_estimators=n_estimators,
-                                     max_depth=max_depth,
-                                     min_samples_split=min_samples_split,
-                                     min_samples_leaf=min_samples_leaf,
-                                     max_features=max_features,
-                                     bootstrap=bootstrap,
-                                     seed=seed)
-    
-    # List to store test scores
-    test_scores_list = []
+                    descriptors_array, 
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    min_samples_split=min_samples_split,
+                    min_samples_leaf=min_samples_leaf,
+                    max_features=max_features,
+                    bootstrap=bootstrap,
+                    seed=seed
 
-    # Iterate through each unique cluster
-    unique_clusters = np.unique(clusters)
+    )
 
-    for test_cluster in unique_clusters:
-        # Get indices for the current test cluster
-        test_indices = np.where(clusters == test_cluster)[0]
-        
-        # Get indices for all other clusters (training set)
-        training_indices = np.where(clusters != test_cluster)[0]
+    # Train and evaluate model using cross validation
+    rf_reg.train_model_cv(
+                        kfolds=3, 
+                        repeats=5,
+                        seed=seed
+    )
 
-        # Train model with the custom split for the current cluster
-        rf_reg.train_model_custom_split(training_indices, test_indices)
-        
-        # Store the test score for this iteration
-        test_scores_list.append(rf_reg.test_scores)
+    # Sort the data according to the test_indices
 
-    # Calculate mean of the test scores across all iterations
-    mean_test_scores = np.mean(test_scores_list, axis=0)
+    test_indices = rf_reg.test_indices_list
 
-    print(f'Mean Test Scores: {mean_test_scores}')
+    predicted_data = [[] for i in range(len(logKi))]
 
+    for i in range(len(test_indices)):
+        for j in range(len(test_indices[i])):
+            predicted_data[test_indices[i][j]].append(rf_reg.test_pred[i][j]-3)
+
+    predicted_data_means = [np.mean(x) for x in predicted_data]
+    predicted_data_stds = [np.std(x) for x in predicted_data]
+
+    if quantify_test_set_occupancies:
+        test_set_occupancies = [len(x) for x in predicted_data]
+
+    # get MSE and PCC from the computed means
+
+    MSE = np.mean((np.array(predicted_data_means) - logKi +3)**2)
+    PCC = np.corrcoef(predicted_data_means, logKi-3)[0,1]
+
+    if quantify_test_set_occupancies:
+        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies)
+    else:
+        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
 
 def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile=None, show=True):
-    # Plot the data
-    plt.errorbar(logKi - 3, predicted_data_means, yerr=predicted_data_stds, fmt='x', color='black', ecolor='grey', capsize=3)
 
-    # Equal axes, square plot, and 45-degree line
+    # plot the data
+    plt.errorbar(logKi-3, predicted_data_means, yerr=predicted_data_stds, fmt='x', color='black',ecolor='grey', capsize=3)
+
+    # equal axes, square plot and 45 degree line
     plt.axis('square')
+
     plot_range = (-10, 0.5)
+
     plt.xlim(plot_range)
-    plt.ylim(plot_range)
     plt.xticks(np.arange(-8, 2, 2))
     plt.yticks(np.arange(-8, 2, 2))
+    plt.ylim(plot_range)
 
-    # Calculate kT at 310K in kcal/mol
+    # calculate kT at 310K in kcal/mol
+
     kT = 0.0019872043 * 310
+
     kcal_mol = kT * np.log(10)
 
-    # 45-degree line
+    # 45 degree line
+
     plt.plot(plot_range, plot_range, color='grey', linestyle='dotted')
+
     plt.fill_between(plot_range, plot_range - kcal_mol, plot_range + kcal_mol, color='grey', alpha=0.2)
 
     plt.xlabel("Experimental log$_{10}$(Ki / M)")
     plt.ylabel("Predicted log$_{10}$(Ki / M)")
 
-    plt.text(-9.5, -1.5, f"MSE = {MSE:.2f}\nMSE (kcal/mol) = {MSE/kcal_mol:.2f}\nPearson= {PCC:.2f}", fontsize=11)
+    plt.text(-9.5, -1.5, "MSE = %.2f\nMSE (kcal/mol) = %.2f\nPearson= %.2f" % (MSE, MSE/kcal_mol, PCC), fontsize=11)
     
-    # Linear best fit line
-    plt.plot(plot_range, np.poly1d(np.polyfit(logKi - 3, predicted_data_means, 1))(plot_range), color='dimgrey', linestyle='dashed')
+    # also make a linear best fit line
+
+    plt.plot(plot_range, np.poly1d(np.polyfit(logKi-3, predicted_data_means, 1))(plot_range), color='dimgrey', linestyle='dashed')
     
     if outfile:
         plt.savefig(outfile)
@@ -99,11 +134,14 @@ def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile
         plt.show()
     plt.clf()
 
-#%% Perform 2D-grid search of n_estimators and max_depth
+
+#%%
+
+# perform 2D-grid search of n_estimators and max_depth
 if PERFORM_GRID_SEARCH:
         
-    n_estimators = [10, 20, 30, 40, 50, 60, 100, 500]
-    max_depth = [2, 5, 8, 10, 12, 14, 50]
+    n_estimators = [10, 50, 100, 200, 500]
+    max_depth = [2, 5, 10, 20, 50]
 
     MSE_grid = np.zeros((len(n_estimators), len(max_depth)))
     PCC_grid = np.zeros((len(n_estimators), len(max_depth)))
@@ -112,28 +150,19 @@ if PERFORM_GRID_SEARCH:
         for j in range(len(max_depth)):
             MSEs, PCCs = [], []
             for replicate in range(3):
-                # Pass the correct parameters based on your regression function
-                predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC = perform_regression(
-                    n_estimators[i], 
-                    max_depth[j], 
-                    2,  # min_samples_split
-                    1,  # min_samples_leaf
-                    'sqrt',  # max_features
-                    True,  # bootstrap
-                    seed=replicate  # random seed
-                )
+                predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC = perform_regression(n_estimators[i], max_depth[j], 2, 1, 'sqrt', True, seed=replicate)
                 MSEs.append(MSE)
                 PCCs.append(PCC)
                 print(f"Regression with n_estimators={n_estimators[i]}, max_depth={max_depth[j]}, rep {replicate} -> MSE={MSE}, PCC={PCC}")
-            MSE_grid[i, j] = np.mean(MSEs)
-            PCC_grid[i, j] = np.mean(PCCs)
+            MSE_grid[i,j] = np.mean(MSEs)
+            PCC_grid[i,j] = np.mean(PCCs)
 
 
-    np.save("tanimoto/hierarch_cluster/output/PCC_grid_n_estimators_max_depth.npy", PCC_grid)
-    np.save("tanimoto/hierarch_cluster/output/MSE_grid_n_estimators_max_depth.npy", MSE_grid)
+    np.save("regression_outputs/regression_morganfp_randomforest/PCC_grid_n_estimators_max_depth.npy", PCC_grid)
+    np.save("regression_outputs/regression_morganfp_randomforest/MSE_grid_n_estimators_max_depth.npy", MSE_grid)
 
-PCC_grid_n_estimators_max_depth = np.load("tanimoto/hierarch_cluster/output/PCC_grid_n_estimators_max_depth.npy")
-MSE_grid_n_estimators_max_depth = np.load("tanimoto/hierarch_cluster/output//MSE_grid_n_estimators_max_depth.npy")
+PCC_grid_n_estimators_max_depth = np.load("regression_outputs/regression_morganfp_randomforest/PCC_grid_n_estimators_max_depth.npy")
+MSE_grid_n_estimators_max_depth = np.load("regression_outputs/regression_morganfp_randomforest/MSE_grid_n_estimators_max_depth.npy")
 
 
 #%%
@@ -159,11 +188,11 @@ if PERFORM_GRID_SEARCH:
             PCC_grid[i,j] = np.mean(PCCs)
 
 
-    np.save("tanimoto/hierarch_cluster/output/PCC_grid_min_samples_split_min_samples_leaf.npy", PCC_grid)
-    np.save("tanimoto/hierarch_cluster/output/MSE_grid_min_samples_split_min_samples_leaf.npy", MSE_grid)
+    np.save("regression_outputs/regression_morganfp_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy", PCC_grid)
+    np.save("regression_outputs/regression_morganfp_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy", MSE_grid)
 
-PCC_grid_min_samples_split_min_samples_leaf = np.load("tanimoto/hierarch_cluster/output//PCC_grid_min_samples_split_min_samples_leaf.npy")
-MSE_grid_min_samples_split_min_samples_leaf = np.load("tanimoto/hierarch_cluster/output//MSE_grid_min_samples_split_min_samples_leaf.npy")
+PCC_grid_min_samples_split_min_samples_leaf = np.load("regression_outputs/regression_morganfp_randomforest/PCC_grid_min_samples_split_min_samples_leaf.npy")
+MSE_grid_min_samples_split_min_samples_leaf = np.load("regression_outputs/regression_morganfp_randomforest/MSE_grid_min_samples_split_min_samples_leaf.npy")
 
 
 #%%
@@ -192,24 +221,24 @@ plt.show()
 
 # using the best parameters, make some predictions with a random seed.
 
-predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies = perform_regression(100, 10, 2, 1, 'sqrt', True, seed=22, quantify_test_set_occupancies=True)
+predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies = perform_regression(100, 10, 2, 1, 'sqrt', True, seed=42, quantify_test_set_occupancies=True)
 plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC)
 
 feature_importances = rf_reg.model.feature_importances_
 
 #%%
 
-np.save("tanimoto/hierarch_cluster/output/feature_importances.npy", feature_importances)
-np.save("tanimoto/hierarch_cluster/output/predicted_data_means.npy", predicted_data_means)
-np.save("tanimoto/hierarch_cluster/output/predicted_data_stds.npy", predicted_data_stds)
-np.save("tanimoto/hierarch_cluster/output/MSE.npy", MSE)
-np.save("tanimoto/hierarch_cluster/output/PCC.npy", PCC)
+np.save("regression_outputs/regression_morganfp_randomforest/feature_importances.npy", feature_importances)
+np.save("regression_outputs/regression_morganfp_randomforest/predicted_data_means.npy", predicted_data_means)
+np.save("regression_outputs/regression_morganfp_randomforest/predicted_data_stds.npy", predicted_data_stds)
+np.save("regression_outputs/regression_morganfp_randomforest/MSE.npy", MSE)
+np.save("regression_outputs/regression_morganfp_randomforest/PCC.npy", PCC)
 
-feature_importances = np.load("tanimoto/hierarch_cluster/output/feature_importances.npy")
-predicted_data_means = np.load("tanimoto/hierarch_cluster/output/predicted_data_means.npy")
-predicted_data_stds = np.load("tanimoto/hierarch_cluster/output/predicted_data_stds.npy")
-MSE = np.load("tanimoto/hierarch_cluster/output/MSE.npy")
-PCC = np.load("tanimoto/hierarch_cluster/output/PCC.npy")
+feature_importances = np.load("regression_outputs/regression_morganfp_randomforest/feature_importances.npy")
+predicted_data_means = np.load("regression_outputs/regression_morganfp_randomforest/predicted_data_means.npy")
+predicted_data_stds = np.load("regression_outputs/regression_morganfp_randomforest/predicted_data_stds.npy")
+MSE = np.load("regression_outputs/regression_morganfp_randomforest/MSE.npy")
+PCC = np.load("regression_outputs/regression_morganfp_randomforest/PCC.npy")
 
 
 #%%
@@ -310,5 +339,23 @@ plt.xlabel("Experimental - predicted pairwise log$_{10}$(Ki / M) difference")
 plt.ylabel("Histogram density")
 plt.vlines(0, 0, 1.2, color='grey', linestyle='dotted')
 plt.show()
+
+# %%
+
+# predict the penG ligands
+
+descriptors_penG = pd.read_csv("penG_predictions/ligand_morganfingerprints.csv", header=None)
+
+descriptors_array_penG = descriptors_penG.drop(0, axis=1).values
+
+prediction = rf_reg.get_predictions(rf_reg.model,descriptors_array_penG) -3
+
+# convert to kcal/mol
+
+kT = 0.0019872043 * 298
+
+kcal_mol = kT * np.log(10)
+
+prediction_kcal = prediction * kcal_mol
 
 # %%
