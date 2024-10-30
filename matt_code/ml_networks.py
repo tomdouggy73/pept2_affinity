@@ -913,39 +913,30 @@ class Regressor_RandomForest():
         self.train_scores = pd.DataFrame(data=train_scores).set_axis(["MSE","PCC"], axis=1)
         self.test_scores = pd.DataFrame(data=test_scores).set_axis(["MSE","PCC"], axis=1)
         self.model = model
-        
-        
+
     def train_model_custom_split(self, training_indices, test_indices):
-        """
-        Train model and obtain predictions using custom train:test split.
-
-        Args:
-            training_indices: Indices for training set.
-            test_indices: Indices for test set.
-        """
-
-        model = self.build_model()
+        # Extract training and test sets
         x_train, x_test = self.desc[training_indices], self.desc[test_indices]
         y_train, y_test = self.target[training_indices], self.target[test_indices]
 
-        # Fit the model on the training set
+        # Proceed with model training if no issues found
+        model = self.build_model()
         model.fit(x_train, y_train)
 
-        # Get predictions for both training and test sets
+        # Get predictions for training and test sets
         pred_train = self.get_predictions(model, x_train)
         pred_test = self.get_predictions(model, x_test)
 
-        # Calculate scores and store them in a structured format
-        train_scores = pd.DataFrame(data=[self.get_scores(y_train, pred_train)], columns=["MSE", "PCC"])
-        test_scores = pd.DataFrame(data=[self.get_scores(y_test, pred_test)], columns=["MSE", "PCC"])
-
         # Store the actual and predicted values
-        self.train_y = y_train
-        self.train_pred = self.pred_train
-        self.test_y = y_test
-        self.test_pred = self.pred_test
+        self.y_train = y_train
+        self.pred_train = pred_train
+        self.y_test = y_test
+        self.pred_test = pred_test
         self.model = model
-
+        
+        # Calculate scores and store them as attributes of the instance
+        self.train_scores = pd.DataFrame(data=[self.get_scores(y_train, pred_train)], columns=["MSE", "PCC"])
+        self.test_scores = pd.DataFrame(data=[self.get_scores(y_test, pred_test)], columns=["MSE", "PCC"])   
 
     def get_predictions(self, model, x):
         """

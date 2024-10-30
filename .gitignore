@@ -1,0 +1,23 @@
+#datasets
+*.csv
+*.dat
+
+#token
+doug_token
+
+#directories
+error_split
+run_ML_one
+mf_zinc_chunks
+pept2_structures
+test_env
+
+#outputs
+regression_2dpharm_randomforest
+regression_descriptors_randomforest
+regression_morganfp_randomforest
+regression_dissim_cluster
+regression_hierarch_cluster
+
+# Ignore Emacs lock files
+.*lock.*
