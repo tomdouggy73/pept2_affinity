@@ -8,27 +8,9 @@ from rdkit.Chem import Draw
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 
+import sys
+sys.path.append('../../')
 from matt_code.ml_networks import *
-
-IPythonConsole.ipython_useSVG = True
-
-# Main script settings
-PERFORM_GRID_SEARCH = True
-
-# Load dataset
-dataset = pd.read_csv('tanimoto/max_dissimilarity/final_merged_data_with_fingerprints.csv')
-
-# Data preprocessing
-indices = dataset["SKPT (PEPT2)_x"].dropna().index
-smiles = dataset["SMILES"][indices].values
-Ki = dataset["SKPT (PEPT2)_x"].dropna().values
-compounds_names = dataset["Compound"][indices].values
-logKi = np.log10(Ki)
-clusters = dataset['Cluster'].values
-
-# Get descriptors
-descriptors = dataset.iloc[indices]
-descriptors_array = descriptors.drop(descriptors.columns[0:12], axis=1).values
 
 
 def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=42, quantify_test_set_occupancies=False):
@@ -93,9 +75,24 @@ def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_l
 
     return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
 
-predicted_data_means, predicted_data_stds, rf_reg, mse, pcc = perform_regression(
-    n_estimators=100, max_depth=10, min_samples_split=2, min_samples_leaf=1, 
-    max_features='sqrt', bootstrap=True
-)
 
- 
+if __name__ == "__main__":
+    # Load dataset
+    dataset = pd.read_csv('../../tanimoto/max_dissimilarity/final_merged_data_with_fingerprints.csv')
+
+    # Data preprocessing
+    indices = dataset["SKPT (PEPT2)_x"].dropna().index
+    smiles = dataset["SMILES"][indices].values
+    Ki = dataset["SKPT (PEPT2)_x"].dropna().values
+    compounds_names = dataset["Compound"][indices].values
+    logKi = np.log10(Ki)
+    clusters = dataset['Cluster'].values
+
+    # Get descriptors
+    descriptors = dataset.iloc[indices]
+    descriptors_array = descriptors.drop(descriptors.columns[0:12], axis=1).values
+
+    predicted_data_means, predicted_data_stds, rf_reg, mse, pcc = perform_regression(
+        n_estimators=100, max_depth=10, min_samples_split=2, min_samples_leaf=1, 
+        max_features='sqrt', bootstrap=True
+    )
