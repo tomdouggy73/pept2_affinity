@@ -4,7 +4,7 @@ from rdkit.Chem import AllChem
 from rdkit.Chem import rdMolTransforms
 
 # Load the CSV file without headers
-input_file = "final_top_1000.csv"
+input_file = "zinc/zinc_prediction/final_top_1000.csv"
 df = pd.read_csv(input_file, header=None)
 
 # Manually assign column names (assuming the first column contains SMILES)
@@ -95,7 +95,7 @@ def classify_molecule(smiles):
         else:
             return f'inhibitor, distance={max_distance:.2f} Å, bonds={max_bond_count} (too many bonds)'
     else:
-        if max_bond_count < 5:
+        if max_distance < 5.0:
             return f'inhibitor, distance={max_distance:.2f} Å (too close together)'
         return f'inhibitor, distance={max_distance:.2f} Å (too far apart)'
 
@@ -103,7 +103,7 @@ def classify_molecule(smiles):
 df['classification'] = df['smiles'].apply(classify_molecule)
 
 # Save the updated dataframe to a new CSV file
-output_file = "classified_molecules_3d.csv"
+output_file = "posthoc/top_1000_classified.csv"
 df.to_csv(output_file, index=False)
 
 print(f"3D distance-based classification complete. Results saved to {output_file}")

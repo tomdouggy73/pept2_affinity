@@ -1,0 +1,34 @@
+142: Acidocillin
+143: Amoxicillin
+144: Ampicillin
+145: Benzylpenicillin
+146: Cefaclor
+147: Cefadroxil
+148: Cefamandole
+149: Cefapirin
+150: Cefazoline
+151: Cefepime
+152: Cefixime
+153: Cefdinir
+155: Cefodizime
+156: Cefotaxime
+157: Cefoxitin
+158: Cefpirome
+159: Cefpodoxime
+160: Cefsulodin
+161: Ceftazidime
+163: Ceftriaxone
+164: Cefuroxime
+165: Cefuroxime-Axetil
+166: Cephalexin
+167: Cephaloridine
+168: Cephalothin
+169: Cephradine
+170: Cloxacillin
+171: Cyclacillin
+172: Dicloxacillin
+173: Flucloxacillin
+174: Metampicillin
+176: Oxacillin
+177: 7 -Aminocephalosporanic acid
+178: 6-Aminopenicillanic acid

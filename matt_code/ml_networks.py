@@ -4,11 +4,11 @@ import pandas as pd
 import numpy as np
 import pickle
 from tensorflow import keras
-from tensorflow.keras import layers, optimizers, Model, backend
-from tensorflow.keras.layers import Input, Dense, GaussianNoise, Dropout
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.models import Sequential
+from tensorflow.keras import layers, optimizers, Model, backend # type: ignore
+from tensorflow.keras.layers import Input, Dense, GaussianNoise, Dropout # type: ignore
+from tensorflow.keras.regularizers import l2 # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping # type: ignore
+from tensorflow.keras.models import Sequential # type: ignore
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.metrics import confusion_matrix, matthews_corrcoef, ConfusionMatrixDisplay, mean_squared_error, f1_score, make_scorer, roc_curve, auc, precision_recall_curve
 from sklearn.model_selection import KFold, RepeatedStratifiedKFold, RepeatedKFold, RandomizedSearchCV, LeaveOneOut
@@ -913,6 +913,77 @@ class Regressor_RandomForest():
         self.train_scores = pd.DataFrame(data=train_scores).set_axis(["MSE","PCC"], axis=1)
         self.test_scores = pd.DataFrame(data=test_scores).set_axis(["MSE","PCC"], axis=1)
         self.model = model
+        
+    def train_model_nested_cv(self, outer_kfolds, inner_kfolds, repeats=1, seed=42):
+        """
+        Train model and obtain predictions using nested cross validation.
+
+        Args:
+            outer_kfolds: Number of folds for outer cross validation.
+            inner_kfolds: Number of folds for inner cross validation.
+            repeats: Number of times to repeat kfold CV.
+            seed: Random seed.
+        """
+        outer_kf = RepeatedKFold(n_splits=outer_kfolds, n_repeats=repeats, random_state=seed)
+        inner_kf = RepeatedKFold(n_splits=inner_kfolds, n_repeats=repeats, random_state=seed)
+        
+        # Initialize variables to store scores for inner and outer loops
+        outer_scores = []
+        inner_scores = []
+        
+        splits, test_indices_list = split_data(outer_kf, self.desc, self.target)
+        y_train_all, y_test_all, pred_train_all, pred_test_all = [], [], [], []
+        
+        for k in range(outer_kf.get_n_splits()):
+            model = self.build_model()
+            x_train, x_test = splits['xtrain'][k], splits['xtest'][k]
+            y_train, y_test = splits['ytrain'][k], splits['ytest'][k]
+            
+            inner_splits, _ = split_data(inner_kf, x_train, y_train)
+            fold_inner_scores = []
+            
+            for i in range(inner_kf.get_n_splits()):
+                x_train_inner, x_test_inner = inner_splits['xtrain'][i], inner_splits['xtest'][i]
+                y_train_inner, y_test_inner = inner_splits['ytrain'][i], inner_splits['ytest'][i]
+
+                model.fit(x_train_inner, y_train_inner)
+
+                pred_train = self.get_predictions(model, x_train_inner)
+                pred_test = self.get_predictions(model, x_test_inner)
+
+                # Calculate scores and store for inner loop
+                inner_score = self.get_scores(y_test_inner, pred_test)
+                inner_score_dict = {"MSE": inner_score[0], "PCC": inner_score[1]}
+                fold_inner_scores.append(inner_score_dict)
+
+            # Calculate mean inner scores for this outer fold and store them
+            mean_inner_mse = np.mean([score["MSE"] for score in fold_inner_scores])
+            mean_inner_pcc = np.mean([score["PCC"] for score in fold_inner_scores])
+            inner_scores.append({"MSE": mean_inner_mse, "PCC": mean_inner_pcc})
+            
+            # Train on the outer loop with inner best model
+            model.fit(x_train, y_train)
+            outer_pred = self.get_predictions(model, x_test)
+            outer_score = self.get_scores(y_test, outer_pred)
+            outer_score_dict = {"MSE": outer_score[0], "PCC": outer_score[1]}
+            outer_scores.append(outer_score_dict)
+            
+            # Collect predictions for later analysis
+            y_train_all.append(y_train)
+            y_test_all.append(y_test)
+            pred_train_all.append(self.get_predictions(model, x_train))
+            pred_test_all.append(outer_pred)
+        
+        # Store results for all scores and predictions
+        self.train_y = y_train_all
+        self.train_pred = pred_train_all
+        self.test_y = y_test_all
+        self.test_pred = pred_test_all
+        self.test_indices_list = test_indices_list
+        
+        # Store average of inner and outer scores across all folds
+        self.mean_inner_scores = pd.DataFrame(inner_scores).mean().to_dict()
+        self.mean_outer_scores = pd.DataFrame(outer_scores).mean().to_dict()
 
     def train_model_custom_split(self, training_indices, test_indices):
         # Extract training and test sets
@@ -932,6 +1003,7 @@ class Regressor_RandomForest():
         self.pred_train = pred_train
         self.y_test = y_test
         self.pred_test = pred_test
+        self.test_indices = test_indices
         self.model = model
         
         # Calculate scores and store them as attributes of the instance
