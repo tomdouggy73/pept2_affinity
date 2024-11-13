@@ -118,6 +118,48 @@ def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_l
     else:
         return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
 
+def perform_regression_with_test_set(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=41):
+    ''' work in progress'''
+        # Build model
+        rf_reg = Regressor_RandomForest(logKi_train,  # type: ignore
+                        descriptors_array_train, 
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        max_features=max_features,
+                        bootstrap=bootstrap,
+                        seed=seed
+    
+        )
+    
+        # Train and evaluate model using cross validation
+        rf_reg.train_model_cv(
+                            kfolds=3, 
+                            repeats=5,
+                            seed=seed
+        )
+    
+        # Sort the data according to the test_indices
+    
+        test_indices = rf_reg.test_indices_list
+    
+        predicted_data = [[] for i in range(len(logKi_train))]
+    
+        for i in range(len(test_indices)):
+            for j in range(len(test_indices[i])):
+                predicted_data[test_indices[i][j]].append(rf_reg.test_pred[i][j]-3)
+    
+        predicted_data_means = [np.mean(x) for x in predicted_data]
+        predicted_data_stds = [np.std(x) for x in predicted_data]
+    
+        # get MSE and PCC from the computed means
+    
+        MSE = np.mean((np.array(predicted_data_means) - logKi_train +3)**2)
+        PCC = np.corrcoef(predicted_data_means, logKi_train-3)[0,1]
+    
+        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
+
 def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile=None, show=True):
 
     # plot the data
