@@ -129,6 +129,7 @@ def plot_regression(predicted_data, MSE, PCC, outfile="/biggin/b229/chri6405/pep
         plt.show()
     plt.clf()
 
+
 # Call the regression model using best hyperparameters
 predicted_data, rf_reg, MSE, PCC = perform_regression(
     n_estimators=100, max_depth=10, min_samples_split=2, min_samples_leaf=1, 
@@ -136,3 +137,4 @@ predicted_data, rf_reg, MSE, PCC = perform_regression(
 )
 
 plot_regression(predicted_data, MSE, PCC)
+
