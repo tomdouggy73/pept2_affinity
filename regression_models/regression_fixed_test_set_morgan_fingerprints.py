@@ -1,5 +1,3 @@
-#%%
-
 from rdkit import Chem
 import rdkit.Chem.Descriptors as Descriptors, rdkit.Chem.rdMolDescriptors as rdMolDescriptors
 import numpy as np
@@ -13,35 +11,61 @@ import sys
 sys.path.append('../')
 from matt_code.ml_networks import * # type: ignore
 
-
 # script settings
-PERFORM_GRID_SEARCH = False
+PERFORM_GRID_SEARCH = True
 
-#%%
+# Get the indices of the test set
 
-dataset = pd.read_csv("/biggin/b229/chri6405/pept2_affinity/source_data/dataset_smiles.csv")
+# Load the dataset containing SMILES and Ki values
+dataset = pd.read_csv("/biggin/b229/chri6405/pept2_affinity/vendi/test_set_clusters/vendi_cluster_maxmin.csv")
 
 # Treat all 'inf' values as missing values
 dataset = dataset.replace([np.inf, -np.inf], np.nan)
 
-# find all indices for which data exists for Caco-2 (PEPT1)
+# Load the CSV file containing the 'Cluster' information
+# Replace this with the path to your cluster CSV file
+cluster_dataset = pd.read_csv("/biggin/b229/chri6405/pept2_affinity/source_data/dataset_morganfingerprints.csv")
 
-indices = dataset["SKPT (PEPT2)"].dropna().index
-smiles = dataset["SMILES"][indices].values
-Ki = dataset["SKPT (PEPT2)"].dropna().values
-compounds_names = dataset["Compound"][indices].values
-logKi = np.log10(Ki)
+# Assuming the 'Cluster' column is present in the cluster CSV, we merge it with the original dataset
+# Make sure to adjust the column name if it's different in your cluster file
+dataset = dataset.merge(cluster_dataset[['SMILES', 'Cluster']], on='SMILES', how='left')
 
-rdkit_mols = [Chem.MolFromSmiles(smi) for smi in smiles]
+# Filter out rows where Cluster == 2 (training set)
+train_indices = dataset[dataset['Cluster'] == 2].index
 
-# Get descriptors
+# SMILES and Ki values for the training set (Cluster == 2)
+smiles_train = dataset["SMILES"].iloc[train_indices].values
+Ki_train = dataset["SKPT (PEPT2)"].iloc[train_indices].dropna().values
+logKi_train = np.log10(Ki_train)
 
+# Create RDKit molecules from SMILES for training set
+rdkit_mols_train = [Chem.MolFromSmiles(smi) for smi in smiles_train]
+
+# Load the descriptors file
 descriptors_all = pd.read_csv("/biggin/b229/chri6405/pept2_affinity/source_data/dataset_morganfingerprints.csv", header=None)
-descriptors = descriptors_all.iloc[indices]
 
-descriptors_array = descriptors.drop(0, axis=1).values
+# Filter out descriptors corresponding to the training set
+descriptors_train = descriptors_all.iloc[train_indices]
 
+# Get descriptors array for training set (remove first column if it's not needed)
+descriptors_array_train = descriptors_train.drop(0, axis=1).values
 
+# Filter out rows where Cluster == 1 (test set)
+test_indices = dataset[dataset['Cluster'] == 1].index
+
+# SMILES and Ki values for the test set (Cluster == 1)
+smiles_test = dataset["SMILES"].iloc[test_indices].values
+Ki_test = dataset["SKPT (PEPT2)"].iloc[test_indices].dropna().values
+logKi_test = np.log10(Ki_test)
+
+# Create RDKit molecules from SMILES for test set
+rdkit_mols_test = [Chem.MolFromSmiles(smi) for smi in smiles_test]
+
+# Filter out descriptors corresponding to the test set
+descriptors_test = descriptors_all.iloc[test_indices]
+
+# Get descriptors array for test set (remove first column if it's not needed)
+descriptors_array_test = descriptors_test.drop(0, axis=1).values
 
 # %%
 
@@ -49,8 +73,8 @@ descriptors_array = descriptors.drop(0, axis=1).values
 def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=41, quantify_test_set_occupancies=False):
 
     # Build model
-    rf_reg = Regressor_RandomForest(logKi,  # type: ignore
-                    descriptors_array, 
+    rf_reg = Regressor_RandomForest(logKi_train,  # type: ignore
+                    descriptors_array_train, 
                     n_estimators=n_estimators,
                     max_depth=max_depth,
                     min_samples_split=min_samples_split,
@@ -72,7 +96,7 @@ def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_l
 
     test_indices = rf_reg.test_indices_list
 
-    predicted_data = [[] for i in range(len(logKi))]
+    predicted_data = [[] for i in range(len(logKi_train))]
 
     for i in range(len(test_indices)):
         for j in range(len(test_indices[i])):
@@ -86,18 +110,60 @@ def perform_regression(n_estimators, max_depth, min_samples_split, min_samples_l
 
     # get MSE and PCC from the computed means
 
-    MSE = np.mean((np.array(predicted_data_means) - logKi +3)**2)
-    PCC = np.corrcoef(predicted_data_means, logKi-3)[0,1]
+    MSE = np.mean((np.array(predicted_data_means) - logKi_train +3)**2)
+    PCC = np.corrcoef(predicted_data_means, logKi_train-3)[0,1]
 
     if quantify_test_set_occupancies:
         return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC, test_set_occupancies)
     else:
         return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
 
+def perform_regression_with_test_set(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, bootstrap, seed=41):
+    ''' work in progress'''
+        # Build model
+        rf_reg = Regressor_RandomForest(logKi_train,  # type: ignore
+                        descriptors_array_train, 
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        max_features=max_features,
+                        bootstrap=bootstrap,
+                        seed=seed
+    
+        )
+    
+        # Train and evaluate model using cross validation
+        rf_reg.train_model_cv(
+                            kfolds=3, 
+                            repeats=5,
+                            seed=seed
+        )
+    
+        # Sort the data according to the test_indices
+    
+        test_indices = rf_reg.test_indices_list
+    
+        predicted_data = [[] for i in range(len(logKi_train))]
+    
+        for i in range(len(test_indices)):
+            for j in range(len(test_indices[i])):
+                predicted_data[test_indices[i][j]].append(rf_reg.test_pred[i][j]-3)
+    
+        predicted_data_means = [np.mean(x) for x in predicted_data]
+        predicted_data_stds = [np.std(x) for x in predicted_data]
+    
+        # get MSE and PCC from the computed means
+    
+        MSE = np.mean((np.array(predicted_data_means) - logKi_train +3)**2)
+        PCC = np.corrcoef(predicted_data_means, logKi_train-3)[0,1]
+    
+        return (predicted_data_means, predicted_data_stds, rf_reg, MSE, PCC)
+
 def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile=None, show=True):
 
     # plot the data
-    plt.errorbar(logKi-3, predicted_data_means, yerr=predicted_data_stds, fmt='x', color='black',ecolor='grey', capsize=3)
+    plt.errorbar(logKi_train-3, predicted_data_means, yerr=predicted_data_stds, fmt='x', color='black',ecolor='grey', capsize=3)
 
     # equal axes, square plot and 45 degree line
     plt.axis('square')
@@ -128,7 +194,7 @@ def plot_regression(predicted_data_means, predicted_data_stds, MSE, PCC, outfile
     
     # also make a linear best fit line
 
-    plt.plot(plot_range, np.poly1d(np.polyfit(logKi-3, predicted_data_means, 1))(plot_range), color='dimgrey', linestyle='dashed')
+    plt.plot(plot_range, np.poly1d(np.polyfit(logKi_train-3, predicted_data_means, 1))(plot_range), color='dimgrey', linestyle='dashed')
     
     if outfile:
         plt.savefig(outfile)

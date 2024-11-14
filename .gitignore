@@ -1,18 +1,23 @@
-#datasets
+# datasets
 *.csv
 *.dat
 
-#token
+# Do not ignore this specific CSV file
+!tanimoto/max_dissimilarity/final_merged_data_with_fingerprints.csv
+
+# token
 doug_token
 
-#directories
+# directories
 error_split
 run_ML_one
 mf_zinc_chunks
 pept2_structures
 test_env
+trials
+regression_outputs
 
-#outputs
+# outputs
 regression_2dpharm_randomforest
 regression_descriptors_randomforest
 regression_morganfp_randomforest
@@ -21,3 +26,6 @@ regression_hierarch_cluster
 
 # Ignore Emacs lock files
 .*lock.*
+
+# jupyter notebooks
+.ipynb_checkpoints
